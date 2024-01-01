@@ -1,0 +1,1 @@
+# base image for C projects
