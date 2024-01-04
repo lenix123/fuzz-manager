@@ -57,35 +57,45 @@ class Project:
         logger.info('Docker image for the project builded successfully')
         return True
 
-    def is_base_image_builded(self):
-        """Checks that base_image exists"""
-        try:
-            docker_client.images.get('base_image_{language}'.format(language=self.language))
+    def create_container(self, env=None):
+        """Starts the container"""
+        if self.is_container_created():
+            logger.info("Could not create the container, because it already exists")
             return True
-        except docker.errors.ImageNotFound:
-            return False
 
-    def run_container(self):
-        """Runs the container"""
         if not self.is_image_builded:
             # TODO correctly handle this event (maybe return error or False)
             self.build_project_image()
 
         try:
-            # TODO wait for container or run it in attach mode
-            self.container = docker_client.containers.run(image=self.image_name, detach=True, name=self.container_name)
-        # Ignore ContainerError because running in the detach mode
+            self.container = docker_client.containers.create(image=self.image_name, name=self.container_name, environment=env)
         # Ignore ImageNotFound because we first have checked that image exists
         except docker.errors.APIError as error:
-            logger.error("Could not run docker container: %s", error)
+            logger.error("Could not create docker container: %s", error)
             return False
 
-        logger.info("Docker container started successfully")
+        logger.info("Docker container created successfully")
         return True
 
     def start_container(self):
         """Start the container"""
-        pass
+        if not self.is_container_created():
+            logger.info("Could not start the container, because it does not exist")
+            return True
+
+        if self.container.status == 'running':
+            logger.info("The container is running")
+            return True
+
+        # TODO wait for container or run it in attach mode
+        try:
+            self.container.start()
+        except docker.errors.APIError as err:
+            logger.error("Could not start the container: %s", err)
+            return False
+
+        logger.info("Docker container started successfully")
+        return True
     
     def attach_container(self):
         """Attaches the container for shell function"""
@@ -94,6 +104,24 @@ class Project:
     def stop_container(self):
         """Stops the container"""
         pass
+
+    def is_base_image_builded(self):
+        """Checks that base_image exists"""
+        try:
+            docker_client.images.get('base_image_{language}'.format(language=self.language))
+            return True
+        except docker.errors.ImageNotFound:
+            return False
+
+    def is_container_created(self):
+        """checks that the container exists and if true sets self.container field"""
+        if self.container == None:
+            try:
+                self.container = docker_client.containers.get(self.container_name)
+            except docker.errors.NotFound:
+                return False
+
+        return True
 
 def main():
     """Gets subcommand from program arguments and performs it."""
@@ -121,7 +149,7 @@ def get_parser():
     build_fuzzers_parser.add_argument('--dockerfile', default='Dockerfile', help='Dockerfile name. Default is `Dockerfile`')
     build_fuzzers_parser.add_argument('--language', default='c', help='the language of the project. Default is c')
     build_fuzzers_parser.add_argument('--sanitizer', choices=['address', 'undefined', 'coverage', 'none'], default='address',
-                                      help='default is address sanitizer. Default is address')
+                                      help='Build with specific sanitizer. Default is address')
     
     return parser
 
@@ -150,11 +178,19 @@ def build_fuzzers(args):
     if not project.is_image_builded and not project.build_project_image():
         return
 
-    # TODO in future commands we may don't want to run container, but instead start it if container exists
-    # maybe it is better to separate run to create and start functions
-    if project.container == None and not project.run_container():
+    # run the container
+    if not project.create_container(env=['SANITIZER={sanitizer}'.format(args.sanitizer)]) or not project.start_container():
+        return
+    
+    # run build.sh inside of the container
+    try:
+        # TODO determine the best way to run build.sh in the container. Maybe we should run it detach mode
+        # or run it as ENTRYPOINT in dockerfile
+        project.container.exec_run(cmd=['./build.sh'])
+    except docker.errors.APIError as err:
+        logger.error("Could not run build.sh in the container: %s", err)
         return
 
-    # TODO run in the created container setup.sh
+    return
 
 main()
