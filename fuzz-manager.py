@@ -14,7 +14,7 @@ docker_client = docker.from_env()
 class Project:
     """Class representing a project"""
 
-    def __init__(self, project_path, language, dockerfile):
+    def __init__(self, project_path, language=None, dockerfile=None):
         self.project_path = project_path.rstrip('/')
         self.language = language
         self.dockerfile = dockerfile
@@ -25,6 +25,9 @@ class Project:
         
         self.is_image_builded = False
         self.container = None
+
+    # TODO maybe these functions should not check that the container exists and the image is builded
+    # to avoid repetitions. Maybe these checks should be done by the calling functions
 
     def build_project_image(self):
         """Builds docker image for the project"""
@@ -80,8 +83,8 @@ class Project:
     def start_container(self):
         """Start the container"""
         if not self.is_container_created():
-            logger.info("Could not start the container, because it does not exist")
-            return True
+            logger.error("Could not start the container, because it does not exist")
+            return False
 
         if self.container.status == 'running':
             logger.info("The container is running")
@@ -96,6 +99,10 @@ class Project:
 
         logger.info("Docker container started successfully")
         return True
+
+    def run_fuzzers(self):
+        """Run fuzzers in the container"""
+        pass
     
     def attach_container(self):
         """Attaches the container for shell function"""
@@ -103,7 +110,21 @@ class Project:
 
     def stop_container(self):
         """Stops the container"""
-        pass
+        if not self.is_container_created():
+            logger.info("Could not stop the container, because it does not exist")
+            return True
+
+        if self.container.status == 'exited':
+            logger.info("The container is exited")
+            return True
+
+        try:
+            self.container.stop()
+        except docker.errors.APIError as err:
+            logger.error("Could not stop the container: %s", err)
+            return False
+
+        return True
 
     def is_base_image_builded(self):
         """Checks that base_image exists"""
@@ -133,6 +154,8 @@ def main():
         build_base_images(args)
     elif args.command == 'build_fuzzers':
         build_fuzzers(args)
+    elif args.command == 'run_fuzzers':
+        run_fuzzers(args)
     else:
         parser.print_help()
 
@@ -151,6 +174,9 @@ def get_parser():
     build_fuzzers_parser.add_argument('--sanitizer', choices=['address', 'undefined', 'coverage', 'none'], default='address',
                                       help='Build with specific sanitizer. Default is address')
     
+    # TODO  add some arguments to adjust the process of fuzzing
+    run_fuzzers_parser = subparsers.add_parser('run_fuzzers', help='Run fuzzers for a project')
+    run_fuzzers_parser.add_argument('project_path', help='Path to the project')
     return parser
 
 def build_base_images(args):
@@ -191,6 +217,22 @@ def build_fuzzers(args):
         logger.error("Could not run build.sh in the container: %s", err)
         return
 
-    return
+    # Think it is better to stop the container and start it when needed
+    project.stop_container()
+
+def run_fuzzers(args):
+    """Run the process of fuzzing in the container"""
+    project = Project(args.project_path)
+    
+    if not project.is_container_created():
+        logger.error('Could not run fuzzing, because there is no target container.\n \
+                      You should first run `python {file_name} build-fuzzers {project}`'.format(os.path.realpath(__file__), project))
+        return
+    
+    if not project.start_container():
+        return
+
+    project.run_fuzzers()
+    project.stop_container()
 
 main()
