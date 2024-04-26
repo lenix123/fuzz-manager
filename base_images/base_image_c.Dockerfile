@@ -6,7 +6,7 @@ ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # install common system packages
-RUN apt-get update && apt-get install -y git make sudo wget curl build-essential python curl lsb-release software-properties-common
+RUN apt-get update && apt-get install -y git make sudo wget curl build-essential python curl lsb-release software-properties-common libclang-rt-14-dev
 
 # create user and group
 ARG cuid=1000
