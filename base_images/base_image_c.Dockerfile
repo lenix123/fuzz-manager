@@ -6,7 +6,7 @@ ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # install common system packages
-RUN apt-get update && apt-get install -y git make sudo wget curl build-essential python curl lsb-release software-properties-common libclang-rt-14-dev
+RUN apt-get update && apt-get install -y git make sudo wget curl build-essential python curl lsb-release software-properties-common
 
 # create user and group
 ARG cuid=1000
@@ -31,9 +31,11 @@ update-alternatives --install /usr/bin/llvm-ranlib llvm-ranlib /usr/bin/llvm-ran
 update-alternatives --install /usr/bin/llvm-link llvm-link /usr/bin/llvm-link-14 100 && \
 update-alternatives --install /usr/bin/llvm-objdump llvm-objdump /usr/bin/llvm-objdump-14 100
 
+RUN apt-get install -y libclang-rt-14-dev
 # clone AFL++ repository
 WORKDIR /home/$cuidname
-RUN git clone https://github.com/AFLplusplus/AFLplusplus
+RUN wget https://github.com/AFLplusplus/AFLplusplus/archive/refs/tags/v4.21c.tar.gz && tar xf v4.21c.tar.gz && rm v4.21c.tar.gz
+RUN mv AFLplusplus-4.21c AFLplusplus
 
 #Build AFL++
 WORKDIR /home/$cuidname/AFLplusplus
